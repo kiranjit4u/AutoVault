@@ -1,0 +1,7 @@
+{
+  "name": "AutoVault - Vehicle Manager & PUC Alerts",
+  "description": "Android vehicle management app with local database for tracking PUC, insurance, tyre pressure, chassis, engine numbers, and automated push expiration alerts.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
