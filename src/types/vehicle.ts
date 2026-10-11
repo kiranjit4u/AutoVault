@@ -46,6 +46,33 @@ export interface TyrePressureConfig {
   logs: TyrePressureLog[];
 }
 
+export type ServiceCategory =
+  | 'oil_change'
+  | 'general_service'
+  | 'battery'
+  | 'brakes'
+  | 'tyres'
+  | 'filter_change'
+  | 'coolant'
+  | 'chain_sprocket'
+  | 'electrical'
+  | 'suspension'
+  | 'other';
+
+export interface ServiceRecord {
+  id: string;
+  date: string; // YYYY-MM-DD
+  odometerKm: number;
+  category: ServiceCategory;
+  serviceCenter: string; // Workshop / Garage name
+  cost: number; // ₹ amount
+  title: string; // e.g., "Engine Oil & Filter Replacement"
+  description?: string; // items replaced, technician remarks
+  invoiceNumber?: string;
+  nextDueKm?: number;
+  nextDueDate?: string;
+}
+
 export interface MaintenanceRecord {
   currentOdometerKm: number;
   lastServiceDate?: string;
@@ -71,6 +98,7 @@ export interface Vehicle {
   insurance: InsurancePolicy;
   tyrePressure: TyrePressureConfig;
   maintenance?: MaintenanceRecord;
+  serviceHistory?: ServiceRecord[];
   createdAt: string;
   updatedAt: string;
 }
@@ -82,7 +110,7 @@ export interface VehicleAlert {
   vehicleId: string;
   vehicleName: string;
   registrationNumber: string;
-  type: 'puc_expiring' | 'puc_expired' | 'insurance_expiring' | 'insurance_expired' | 'pressure_overdue';
+  type: 'puc_expiring' | 'puc_expired' | 'insurance_expiring' | 'insurance_expired' | 'pressure_overdue' | 'service_due';
   title: string;
   message: string;
   daysRemaining: number;

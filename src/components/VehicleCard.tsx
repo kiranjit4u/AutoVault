@@ -17,6 +17,7 @@ import {
   Edit2,
   Trash2,
   FileCheck2,
+  Wrench,
 } from 'lucide-react';
 
 interface Props {
@@ -26,6 +27,8 @@ interface Props {
   onDelete: (vehicleId: string) => void;
   onQuickLogPressure: (vehicle: Vehicle) => void;
   onRenewPUC: (vehicle: Vehicle) => void;
+  onRenewInsurance: (vehicle: Vehicle) => void;
+  onAddService?: (vehicle: Vehicle) => void;
 }
 
 export const VehicleCard: React.FC<Props> = ({
@@ -35,6 +38,8 @@ export const VehicleCard: React.FC<Props> = ({
   onDelete,
   onQuickLogPressure,
   onRenewPUC,
+  onRenewInsurance,
+  onAddService,
 }) => {
   const [copiedChassis, setCopiedChassis] = useState(false);
   const [copiedEngine, setCopiedEngine] = useState(false);
@@ -44,6 +49,9 @@ export const VehicleCard: React.FC<Props> = ({
 
   const isPUCCritical = pucDays <= 5 && pucDays >= 0;
   const isPUCExpired = pucDays < 0;
+
+  const isInsuranceCritical = insuranceDays <= 7 && insuranceDays >= 0;
+  const isInsuranceExpired = insuranceDays < 0;
 
   const handleCopyChassis = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -101,6 +109,31 @@ export const VehicleCard: React.FC<Props> = ({
           </div>
           <span className="text-[11px] underline font-bold cursor-pointer" onClick={(e) => { e.stopPropagation(); onRenewPUC(vehicle); }}>
             Update Certificate →
+          </span>
+        </div>
+      )}
+
+      {/* Insurance Expiration Banner if PUC is safe but Insurance is expiring */}
+      {!isPUCCritical && !isPUCExpired && isInsuranceCritical && (
+        <div className="bg-gradient-to-r from-teal-500 via-sky-500 to-teal-500 bg-[length:200%_auto] text-slate-950 px-3.5 py-1.5 flex items-center justify-between text-xs font-black tracking-wide uppercase animate-pulse">
+          <div className="flex items-center gap-1.5">
+            <ShieldAlert className="w-4 h-4 stroke-[2.5]" />
+            <span>INSURANCE EXPIRES IN {insuranceDays === 0 ? 'TODAY' : `${insuranceDays} DAYS`}!</span>
+          </div>
+          <span className="text-[11px] underline font-bold cursor-pointer" onClick={(e) => { e.stopPropagation(); onRenewInsurance(vehicle); }}>
+            Renew Policy →
+          </span>
+        </div>
+      )}
+
+      {!isPUCCritical && !isPUCExpired && isInsuranceExpired && (
+        <div className="bg-rose-700 text-white px-3.5 py-1.5 flex items-center justify-between text-xs font-black tracking-wide uppercase">
+          <div className="flex items-center gap-1.5">
+            <ShieldAlert className="w-4 h-4 stroke-[2.5]" />
+            <span>INSURANCE EXPIRED ({Math.abs(insuranceDays)} DAYS AGO)</span>
+          </div>
+          <span className="text-[11px] underline font-bold cursor-pointer" onClick={(e) => { e.stopPropagation(); onRenewInsurance(vehicle); }}>
+            Renew Policy →
           </span>
         </div>
       )}
@@ -249,11 +282,15 @@ export const VehicleCard: React.FC<Props> = ({
 
           {/* Insurance Status */}
           <div
-            className={`p-2 rounded-xl border text-center transition flex flex-col justify-between ${
+            onClick={(e) => {
+              e.stopPropagation();
+              onRenewInsurance(vehicle);
+            }}
+            className={`p-2 rounded-xl border text-center transition flex flex-col justify-between cursor-pointer ${
               insuranceDays < 0
                 ? 'bg-rose-950/40 border-rose-500/40 text-rose-300'
                 : insuranceDays <= 7
-                ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
+                ? 'bg-teal-950/40 border-teal-500/50 text-teal-300'
                 : 'bg-slate-950/40 border-slate-800/80 text-teal-400'
             }`}
           >
@@ -294,6 +331,27 @@ export const VehicleCard: React.FC<Props> = ({
               Check/Log
             </div>
           </div>
+        </div>
+
+        {/* Maintenance / Service history quick glance */}
+        <div
+          onClick={(e) => {
+            if (onAddService) {
+              e.stopPropagation();
+              onAddService(vehicle);
+            }
+          }}
+          className="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400 cursor-pointer hover:text-slate-200 transition group/service"
+        >
+          <div className="flex items-center gap-1.5 truncate">
+            <Wrench className="w-3.5 h-3.5 text-amber-400 shrink-0 group-hover/service:rotate-12 transition-transform" />
+            <span className="truncate">
+              Service: <strong className="text-slate-300 font-normal">{vehicle.serviceHistory?.[0]?.title || 'Scheduled'}</strong>
+            </span>
+          </div>
+          <span className="text-teal-400 font-mono text-[10px] font-semibold shrink-0 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20 group-hover/service:bg-teal-500/20 transition flex items-center gap-1">
+            <span>+</span> {vehicle.serviceHistory?.length ? `${vehicle.serviceHistory.length} logs` : 'Log service'}
+          </span>
         </div>
       </div>
     </div>

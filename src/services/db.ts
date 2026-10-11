@@ -1,4 +1,4 @@
-import { Vehicle } from '../types/vehicle';
+import { Vehicle, ServiceRecord } from '../types/vehicle';
 
 const STORAGE_KEY = 'autovault_vehicles_v1';
 const SETTINGS_KEY = 'autovault_settings_v1';
@@ -7,6 +7,7 @@ export interface AppSettings {
   pushNotificationsEnabled: boolean;
   soundAlertsEnabled: boolean;
   pucAlertDaysBefore: number; // Default 5 days as requested by user
+  insuranceAlertDaysBefore: number; // Default 15 days
   pressureAlertIntervalDays: number;
 }
 
@@ -14,6 +15,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   pushNotificationsEnabled: true,
   soundAlertsEnabled: true,
   pucAlertDaysBefore: 5,
+  insuranceAlertDaysBefore: 15,
   pressureAlertIntervalDays: 14,
 };
 
@@ -102,6 +104,33 @@ function getInitialVehicles(): Vehicle[] {
         nextServiceDueDate: getRelativeDateString(180),
         nextServiceDueKm: 25000,
       },
+      serviceHistory: [
+        {
+          id: 'srv-1-1',
+          date: getRelativeDateString(-90),
+          odometerKm: 15000,
+          category: 'general_service',
+          serviceCenter: 'Tata Motors Authorized Service Center, Kothrud',
+          cost: 4200,
+          title: '15,000 KM Scheduled General Maintenance',
+          description: 'Software BMS update, wheel alignment & balancing, cabin pollen air filter change, multi-point EV safety inspection.',
+          invoiceNumber: 'INV-TM-2024-8491',
+          nextDueKm: 25000,
+          nextDueDate: getRelativeDateString(180),
+        },
+        {
+          id: 'srv-1-2',
+          date: getRelativeDateString(-210),
+          odometerKm: 7500,
+          category: 'battery',
+          serviceCenter: 'Tata Motors Authorized EV Kiosk',
+          cost: 1500,
+          title: 'Auxiliary 12V Battery Check & Coolant Top-up',
+          description: '12V lead-acid auxiliary battery health test (100% capacity), high-voltage coolant level topped up.',
+          invoiceNumber: 'INV-TM-2023-3104',
+          nextDueKm: 15000,
+        },
+      ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -166,6 +195,33 @@ function getInitialVehicles(): Vehicle[] {
         nextServiceDueDate: getRelativeDateString(135),
         nextServiceDueKm: 15000,
       },
+      serviceHistory: [
+        {
+          id: 'srv-2-1',
+          date: getRelativeDateString(-45),
+          odometerKm: 10000,
+          category: 'oil_change',
+          serviceCenter: 'Royal Enfield Company Workshop, Saket',
+          cost: 3200,
+          title: 'Full Synthetic Engine Oil (15W-50) & Filter',
+          description: 'Replaced 2.1L Motul 300V 15W-50 oil, OEM paper oil filter, drain plug washer. Chain cleaned and lubed.',
+          invoiceNumber: 'RE-DEL-2024-5519',
+          nextDueKm: 15000,
+          nextDueDate: getRelativeDateString(135),
+        },
+        {
+          id: 'srv-2-2',
+          date: getRelativeDateString(-150),
+          odometerKm: 6500,
+          category: 'brakes',
+          serviceCenter: 'Speedway Moto Care, Delhi',
+          cost: 1650,
+          title: 'Front & Rear Brake Pads Replacement',
+          description: 'Installed Brembo ceramic disc brake pads. Bleeded DOT 4 brake fluid.',
+          invoiceNumber: 'SMC-8821',
+          nextDueKm: 16500,
+        },
+      ],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
@@ -234,6 +290,74 @@ export const db = {
     const filtered = list.filter((v) => v.id !== id);
     if (filtered.length !== list.length) {
       this.saveVehicles(filtered);
+      return true;
+    }
+    return false;
+  },
+
+  addServiceRecord(vehicleId: string, record: Omit<ServiceRecord, 'id'>): ServiceRecord | null {
+    const list = this.getVehicles();
+    const vehicle = list.find((v) => v.id === vehicleId);
+    if (!vehicle) return null;
+
+    const newRecord: ServiceRecord = {
+      ...record,
+      id: 'srv-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+    };
+
+    if (!vehicle.serviceHistory) {
+      vehicle.serviceHistory = [];
+    }
+    vehicle.serviceHistory.unshift(newRecord);
+
+    // Optionally update maintenance summary
+    if (!vehicle.maintenance) {
+      vehicle.maintenance = { currentOdometerKm: record.odometerKm };
+    }
+    vehicle.maintenance.lastServiceDate = record.date;
+    vehicle.maintenance.lastServiceKm = record.odometerKm;
+    if (record.odometerKm > (vehicle.maintenance.currentOdometerKm || 0)) {
+      vehicle.maintenance.currentOdometerKm = record.odometerKm;
+    }
+    if (record.nextDueDate) {
+      vehicle.maintenance.nextServiceDueDate = record.nextDueDate;
+    }
+    if (record.nextDueKm) {
+      vehicle.maintenance.nextServiceDueKm = record.nextDueKm;
+    }
+
+    vehicle.updatedAt = new Date().toISOString();
+    this.saveVehicles(list);
+    return newRecord;
+  },
+
+  updateServiceRecord(vehicleId: string, recordId: string, updates: Partial<ServiceRecord>): boolean {
+    const list = this.getVehicles();
+    const vehicle = list.find((v) => v.id === vehicleId);
+    if (!vehicle || !vehicle.serviceHistory) return false;
+
+    const idx = vehicle.serviceHistory.findIndex((r) => r.id === recordId);
+    if (idx === -1) return false;
+
+    vehicle.serviceHistory[idx] = {
+      ...vehicle.serviceHistory[idx],
+      ...updates,
+    };
+    vehicle.updatedAt = new Date().toISOString();
+    this.saveVehicles(list);
+    return true;
+  },
+
+  deleteServiceRecord(vehicleId: string, recordId: string): boolean {
+    const list = this.getVehicles();
+    const vehicle = list.find((v) => v.id === vehicleId);
+    if (!vehicle || !vehicle.serviceHistory) return false;
+
+    const initialLen = vehicle.serviceHistory.length;
+    vehicle.serviceHistory = vehicle.serviceHistory.filter((r) => r.id !== recordId);
+    if (vehicle.serviceHistory.length !== initialLen) {
+      vehicle.updatedAt = new Date().toISOString();
+      this.saveVehicles(list);
       return true;
     }
     return false;

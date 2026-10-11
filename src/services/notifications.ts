@@ -85,10 +85,11 @@ export const notificationService = {
     }
   },
 
-  // Generates alerts list based on current vehicles and user criteria (e.g. <= 5 days for PUC)
+  // Generates alerts list based on current vehicles and user criteria (e.g. <= 5 days for PUC, configurable for Insurance)
   evaluateAllAlerts(vehicles: Vehicle[]): VehicleAlert[] {
     const settings = db.getSettings();
     const pucThreshold = settings.pucAlertDaysBefore || 5;
+    const insuranceThreshold = settings.insuranceAlertDaysBefore || 15;
     const alerts: VehicleAlert[] = [];
 
     for (const vehicle of vehicles) {
@@ -127,7 +128,7 @@ export const notificationService = {
         }
       }
 
-      // 2. Insurance Expiry Check (within 7 days or expired)
+      // 2. Insurance Expiry Check (similar to PUC system with configurable threshold)
       if (vehicle.insurance && vehicle.insurance.expiryDate) {
         const insDays = getDaysRemaining(vehicle.insurance.expiryDate);
         if (insDays < 0) {
@@ -137,24 +138,24 @@ export const notificationService = {
             vehicleName: vehicle.nickname,
             registrationNumber: vehicle.registrationNumber,
             type: 'insurance_expired',
-            title: `🚨 Insurance Expired`,
-            message: `${vehicle.nickname} insurance policy (${vehicle.insurance.provider}) expired on ${vehicle.insurance.expiryDate}. Vehicle is uninsured!`,
+            title: `🚨 Insurance EXPIRED (${Math.abs(insDays)} day${Math.abs(insDays) > 1 ? 's' : ''} ago)`,
+            message: `${vehicle.nickname} (${vehicle.registrationNumber}) insurance policy with ${vehicle.insurance.provider} expired on ${vehicle.insurance.expiryDate}. Vehicle is uninsured!`,
             daysRemaining: insDays,
             severity: 'critical',
             dueDate: vehicle.insurance.expiryDate,
             timestamp: new Date().toISOString(),
           });
-        } else if (insDays <= 7) {
+        } else if (insDays <= insuranceThreshold) {
           alerts.push({
             id: `ins-soon-${vehicle.id}-${vehicle.insurance.expiryDate}`,
             vehicleId: vehicle.id,
             vehicleName: vehicle.nickname,
             registrationNumber: vehicle.registrationNumber,
             type: 'insurance_expiring',
-            title: `🛡️ Insurance Renewal Due in ${insDays} day${insDays > 1 ? 's' : ''}`,
-            message: `${vehicle.nickname} policy with ${vehicle.insurance.provider} expires on ${vehicle.insurance.expiryDate}.`,
+            title: `🛡️ Insurance Expiring in ${insDays === 0 ? 'Today!' : `${insDays} day${insDays > 1 ? 's' : ''}`}`,
+            message: `${vehicle.nickname} (${vehicle.registrationNumber}) policy with ${vehicle.insurance.provider} expires on ${vehicle.insurance.expiryDate}. ${insDays} day${insDays > 1 ? 's' : ''} left to renew!`,
             daysRemaining: insDays,
-            severity: insDays <= 3 ? 'critical' : 'warning',
+            severity: insDays <= 5 ? 'critical' : 'warning',
             dueDate: vehicle.insurance.expiryDate,
             timestamp: new Date().toISOString(),
           });
@@ -238,12 +239,16 @@ export const notificationService = {
       );
       const today = new Date().toISOString().split('T')[0];
 
-      // Prioritize 5-day PUC alerts
-      const pucAlerts = alerts.filter(
-        (a) => a.type === 'puc_expiring' || a.type === 'puc_expired'
+      // Prioritize PUC and Insurance expiration alerts
+      const priorityAlerts = alerts.filter(
+        (a) =>
+          a.type === 'puc_expiring' ||
+          a.type === 'puc_expired' ||
+          a.type === 'insurance_expiring' ||
+          a.type === 'insurance_expired'
       );
 
-      for (const alert of pucAlerts) {
+      for (const alert of priorityAlerts) {
         const lastSent = storedTimestamps[alert.id];
         // Send once per day per specific alert ID
         if (lastSent !== today) {

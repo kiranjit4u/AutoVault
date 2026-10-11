@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Vehicle } from '../types/vehicle';
+import { Vehicle, ServiceRecord, ServiceCategory } from '../types/vehicle';
 import { RegistrationPlate } from './RegistrationPlate';
 import { getDaysRemaining } from '../services/notifications';
 import {
@@ -17,6 +17,11 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
+  Plus,
+  Trash2,
+  Edit2,
+  CircleDollarSign,
+  Building2,
 } from 'lucide-react';
 
 interface Props {
@@ -25,7 +30,11 @@ interface Props {
   onClose: () => void;
   onEdit: (vehicle: Vehicle) => void;
   onRenewPUC: (vehicle: Vehicle) => void;
+  onRenewInsurance: (vehicle: Vehicle) => void;
   onLogPressure: (vehicle: Vehicle) => void;
+  onAddService: (vehicle: Vehicle) => void;
+  onEditService: (vehicle: Vehicle, record: ServiceRecord) => void;
+  onDeleteService: (vehicle: Vehicle, recordId: string) => void;
 }
 
 export const VehicleDetailModal: React.FC<Props> = ({
@@ -34,11 +43,16 @@ export const VehicleDetailModal: React.FC<Props> = ({
   onClose,
   onEdit,
   onRenewPUC,
+  onRenewInsurance,
   onLogPressure,
+  onAddService,
+  onEditService,
+  onDeleteService,
 }) => {
   if (!isOpen || !vehicle) return null;
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'puc' | 'insurance' | 'pressure' | 'hardware'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'puc' | 'insurance' | 'pressure' | 'service' | 'hardware'>('overview');
+  const [serviceCategoryFilter, setServiceCategoryFilter] = useState<ServiceCategory | 'all'>('all');
   const [copiedChassis, setCopiedChassis] = useState(false);
   const [copiedEngine, setCopiedEngine] = useState(false);
   const [copiedPolicy, setCopiedPolicy] = useState(false);
@@ -99,11 +113,25 @@ export const VehicleDetailModal: React.FC<Props> = ({
                 <span>Renew PUC</span>
               </button>
               <button
+                onClick={() => onRenewInsurance(vehicle)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-bold transition"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Renew Policy</span>
+              </button>
+              <button
                 onClick={() => onLogPressure(vehicle)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-bold transition"
               >
                 <Gauge className="w-3.5 h-3.5" />
                 <span>Log PSI</span>
+              </button>
+              <button
+                onClick={() => onAddService(vehicle)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition"
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                <span>+ Service</span>
               </button>
             </div>
           </div>
@@ -120,6 +148,17 @@ export const VehicleDetailModal: React.FC<Props> = ({
             }`}
           >
             Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('service')}
+            className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition ${
+              activeTab === 'service'
+                ? 'bg-teal-500 text-slate-950 font-bold'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Wrench className="w-3.5 h-3.5" />
+            <span>Service History ({vehicle.serviceHistory?.length || 0})</span>
           </button>
           <button
             onClick={() => setActiveTab('puc')}
@@ -297,7 +336,218 @@ export const VehicleDetailModal: React.FC<Props> = ({
             </div>
           )}
 
-          {/* PUC CERTIFICATE DETAILS */}
+          {/* SERVICE HISTORY & MAINTENANCE LOG */}
+          {activeTab === 'service' && (
+            <div className="space-y-4">
+              {/* Metrics Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800">
+                  <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+                    <span>Total Cost</span>
+                    <CircleDollarSign className="w-4 h-4 text-teal-400" />
+                  </div>
+                  <div className="text-lg font-black font-mono text-teal-300">
+                    ₹{(vehicle.serviceHistory || []).reduce((acc, r) => acc + (r.cost || 0), 0).toLocaleString()}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {vehicle.serviceHistory?.length || 0} service logs
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800">
+                  <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+                    <span>Last Service</span>
+                    <Wrench className="w-4 h-4 text-cyan-400" />
+                  </div>
+                  <div className="text-xs font-bold text-white font-mono truncate">
+                    {vehicle.serviceHistory?.[0]?.date || vehicle.maintenance?.lastServiceDate || 'None logged'}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {vehicle.serviceHistory?.[0]?.odometerKm
+                      ? `${vehicle.serviceHistory[0].odometerKm.toLocaleString()} KM`
+                      : vehicle.maintenance?.lastServiceKm
+                      ? `${vehicle.maintenance.lastServiceKm.toLocaleString()} KM`
+                      : 'Odometer N/A'}
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 col-span-2 sm:col-span-1">
+                  <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+                    <span>Next Due Target</span>
+                    <Clock className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="text-xs font-bold text-amber-300 font-mono truncate">
+                    {vehicle.serviceHistory?.[0]?.nextDueKm
+                      ? `${vehicle.serviceHistory[0].nextDueKm.toLocaleString()} KM`
+                      : vehicle.maintenance?.nextServiceDueKm
+                      ? `${vehicle.maintenance.nextServiceDueKm.toLocaleString()} KM`
+                      : vehicle.maintenance?.nextServiceDueDate || 'Not set'}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {vehicle.serviceHistory?.[0]?.nextDueDate || vehicle.maintenance?.nextServiceDueDate || 'Target schedule'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Bar & Category Filter */}
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Maintenance History
+                </span>
+                <button
+                  onClick={() => onAddService(vehicle)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs shadow-md shadow-teal-500/20 transition active:scale-95 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Log Service</span>
+                </button>
+              </div>
+
+              {/* Category Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 text-xs">
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'oil_change', label: '🛢️ Oil' },
+                  { key: 'general_service', label: '🔧 Service' },
+                  { key: 'battery', label: '🔋 Battery' },
+                  { key: 'brakes', label: '🛑 Brakes' },
+                  { key: 'tyres', label: '🛞 Tyres' },
+                  { key: 'filter_change', label: '💨 Filters' },
+                  { key: 'other', label: '🛠️ Other' },
+                ].map((cat) => (
+                  <button
+                    key={cat.key}
+                    onClick={() => setServiceCategoryFilter(cat.key as ServiceCategory | 'all')}
+                    className={`px-2.5 py-1 rounded-xl font-semibold transition whitespace-nowrap text-[11px] ${
+                      serviceCategoryFilter === cat.key
+                        ? 'bg-teal-500 text-slate-950 font-bold shadow-sm'
+                        : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-white'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Service Records List */}
+              {(!vehicle.serviceHistory || vehicle.serviceHistory.length === 0) ? (
+                <div className="p-8 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-2.5">
+                  <Wrench className="w-8 h-8 text-slate-600 mx-auto" />
+                  <h4 className="text-xs font-bold text-white">No Service Records Logged Yet</h4>
+                  <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                    Track your past engine oil changes, battery replacements, brake services, and periodic maintenance records with invoice details.
+                  </p>
+                  <button
+                    onClick={() => onAddService(vehicle)}
+                    className="mt-2 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs inline-flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>Log First Service Record</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-96 overflow-y-auto pr-0.5">
+                  {vehicle.serviceHistory
+                    .filter((rec) => serviceCategoryFilter === 'all' || rec.category === serviceCategoryFilter)
+                    .map((record) => {
+                      const categoryIcons: Record<string, string> = {
+                        oil_change: '🛢️',
+                        general_service: '🔧',
+                        battery: '🔋',
+                        brakes: '🛑',
+                        tyres: '🛞',
+                        filter_change: '💨',
+                        coolant: '🧪',
+                        chain_sprocket: '⚙️',
+                        electrical: '⚡',
+                        suspension: '🔩',
+                        other: '🛠️',
+                      };
+
+                      return (
+                        <div
+                          key={record.id}
+                          className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition space-y-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-start gap-2.5">
+                              <span className="text-lg shrink-0 mt-0.5">
+                                {categoryIcons[record.category] || '🔧'}
+                              </span>
+                              <div>
+                                <h5 className="text-xs font-bold text-white leading-snug">
+                                  {record.title}
+                                </h5>
+                                <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-slate-400 font-mono">
+                                  <span>📅 {record.date}</span>
+                                  <span>•</span>
+                                  <span className="text-slate-300 font-semibold">{record.odometerKm.toLocaleString()} KM</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="font-mono font-bold text-xs text-teal-300 bg-teal-500/10 px-2 py-0.5 rounded-lg border border-teal-500/20">
+                                ₹{record.cost.toLocaleString()}
+                              </span>
+                              <button
+                                onClick={() => onEditService(vehicle, record)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                title="Edit Record"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Delete service record "${record.title}"?`)) {
+                                    onDeleteService(vehicle, record.id);
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                                title="Delete Record"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Workshop and invoice */}
+                          <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-slate-400 pt-1 border-t border-slate-900">
+                            <div className="flex items-center gap-1 truncate">
+                              <Building2 className="w-3 h-3 text-slate-500" />
+                              <span className="truncate">{record.serviceCenter}</span>
+                            </div>
+                            {record.invoiceNumber && (
+                              <span className="font-mono text-[10px] text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                                #{record.invoiceNumber}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Description remarks */}
+                          {record.description && (
+                            <p className="text-[11px] text-slate-300/90 leading-relaxed bg-slate-900/60 p-2 rounded-xl border border-slate-850">
+                              {record.description}
+                            </p>
+                          )}
+
+                          {/* Next target reminder info if present */}
+                          {(record.nextDueKm || record.nextDueDate) && (
+                            <div className="text-[10px] text-amber-300/90 font-mono bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20 flex items-center justify-between">
+                              <span>Next service recommended:</span>
+                              <span>
+                                {record.nextDueKm ? `${record.nextDueKm.toLocaleString()} KM` : ''}{' '}
+                                {record.nextDueDate ? `(${record.nextDueDate})` : ''}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
           {activeTab === 'puc' && (
             <div className="space-y-4">
               <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
@@ -447,6 +697,14 @@ export const VehicleDetailModal: React.FC<Props> = ({
                     </a>
                   </div>
                 )}
+
+                <button
+                  onClick={() => onRenewInsurance(vehicle)}
+                  className="w-full mt-2 py-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Update / Renew Insurance Policy</span>
+                </button>
               </div>
             </div>
           )}

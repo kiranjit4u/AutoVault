@@ -7,6 +7,7 @@ interface Props {
   onDismiss: () => void;
   onViewVehicle: (vehicleId: string) => void;
   onRenewPUC?: (vehicleId: string) => void;
+  onRenewInsurance?: (vehicleId: string) => void;
 }
 
 export const AndroidNotificationBanner: React.FC<Props> = ({
@@ -14,6 +15,7 @@ export const AndroidNotificationBanner: React.FC<Props> = ({
   onDismiss,
   onViewVehicle,
   onRenewPUC,
+  onRenewInsurance,
 }) => {
   if (!alert) return null;
 
@@ -94,6 +96,19 @@ export const AndroidNotificationBanner: React.FC<Props> = ({
                 >
                   <CheckCircle2 className="w-3 h-3 text-teal-400" />
                   <span>Renew PUC</span>
+                </button>
+              )}
+
+              {onRenewInsurance && (alert.type === 'insurance_expiring' || alert.type === 'insurance_expired') && (
+                <button
+                  onClick={() => {
+                    onRenewInsurance(alert.vehicleId);
+                    onDismiss();
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 font-semibold text-xs border border-teal-500/30 transition"
+                >
+                  <CheckCircle2 className="w-3 h-3 text-teal-400" />
+                  <span>Renew Policy</span>
                 </button>
               )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Vehicle, VehicleAlert } from './types/vehicle';
+import { Vehicle, VehicleAlert, ServiceRecord } from './types/vehicle';
 import { db } from './services/db';
 import { notificationService, triggerHaptic, playAndroidChime } from './services/notifications';
 import { AndroidStatusBar } from './components/AndroidStatusBar';
@@ -8,6 +8,8 @@ import { VehicleCard } from './components/VehicleCard';
 import { AddEditVehicleModal } from './components/AddEditVehicleModal';
 import { VehicleDetailModal } from './components/VehicleDetailModal';
 import { RenewPUCModal } from './components/RenewPUCModal';
+import { RenewInsuranceModal } from './components/RenewInsuranceModal';
+import { AddEditServiceModal } from './components/AddEditServiceModal';
 import { QuickLogPressureModal } from './components/QuickLogPressureModal';
 import { PUCAlertsCenter } from './components/PUCAlertsCenter';
 import { TyrePressureStation } from './components/TyrePressureStation';
@@ -24,6 +26,7 @@ import {
   AlertTriangle,
   Smartphone,
   ShieldCheck,
+  Shield,
   CheckCircle2,
   Sparkles,
 } from 'lucide-react';
@@ -44,6 +47,13 @@ export default function App() {
   const [pucRenewVehicle, setPucRenewVehicle] = useState<Vehicle | null>(null);
   const [isRenewOpen, setIsRenewOpen] = useState(false);
 
+  const [insuranceRenewVehicle, setInsuranceRenewVehicle] = useState<Vehicle | null>(null);
+  const [isInsuranceRenewOpen, setIsInsuranceRenewOpen] = useState(false);
+
+  const [serviceVehicle, setServiceVehicle] = useState<Vehicle | null>(null);
+  const [editingServiceRecord, setEditingServiceRecord] = useState<ServiceRecord | null>(null);
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+
   const [pressureVehicle, setPressureVehicle] = useState<Vehicle | null>(null);
   const [isPressureOpen, setIsPressureOpen] = useState(false);
 
@@ -62,17 +72,27 @@ export default function App() {
     return alerts.filter((a) => a.type === 'puc_expiring' || a.type === 'puc_expired').length;
   }, [alerts]);
 
+  const insuranceAlertsCount = useMemo(() => {
+    return alerts.filter((a) => a.type === 'insurance_expiring' || a.type === 'insurance_expired').length;
+  }, [alerts]);
+
+  const totalExpirationAlertsCount = pucAlertsCount + insuranceAlertsCount;
+
   // Initial check on mount
   useEffect(() => {
     // Run automated push alert check
     const evaluated = notificationService.checkAndTriggerPushAlerts(vehicles);
 
-    // Show top heads-up banner for highest priority PUC alert on first launch
-    const urgentPUC = evaluated.find(
-      (a) => a.type === 'puc_expiring' || a.type === 'puc_expired'
+    // Show top heads-up banner for highest priority PUC or Insurance alert on launch
+    const urgentAlert = evaluated.find(
+      (a) =>
+        a.type === 'puc_expiring' ||
+        a.type === 'puc_expired' ||
+        a.type === 'insurance_expiring' ||
+        a.type === 'insurance_expired'
     );
-    if (urgentPUC) {
-      setActiveBannerAlert(urgentPUC);
+    if (urgentAlert) {
+      setActiveBannerAlert(urgentAlert);
     }
   }, []);
 
@@ -110,36 +130,98 @@ export default function App() {
     }
   };
 
+  const handleSaveInsurance = (vehicleId: string, updatedInsurance: Vehicle['insurance']) => {
+    db.updateVehicle(vehicleId, { insurance: updatedInsurance });
+    refreshVehicles();
+    triggerHaptic();
+    if (activeBannerAlert?.vehicleId === vehicleId) {
+      setActiveBannerAlert(null);
+    }
+  };
+
   const handleSavePressure = (vehicleId: string, updatedConfig: Vehicle['tyrePressure']) => {
     db.updateVehicle(vehicleId, { tyrePressure: updatedConfig });
     refreshVehicles();
     triggerHaptic();
   };
 
-  // Test trigger dispatches actual push notification, sound chime, vibration, and banner
-  const triggerManualTestAlert = () => {
-    const urgentPUC = alerts.find(
-      (a) => a.type === 'puc_expiring' || a.type === 'puc_expired'
-    ) || {
-      id: 'test-puc-alert-' + Date.now(),
-      vehicleId: vehicles[0]?.id || 'v1',
-      vehicleName: vehicles[0]?.nickname || 'Tata Nexon EV',
-      registrationNumber: vehicles[0]?.registrationNumber || 'MH 12 QW 5678',
-      type: 'puc_expiring',
-      title: '⚠️ PUC Expiring in 3 Days!',
-      message: `${vehicles[0]?.nickname || 'Tata Nexon EV'} (${vehicles[0]?.registrationNumber || 'MH 12 QW 5678'}) PUC certificate is near expiry. Please renew to avoid fines.`,
-      daysRemaining: 3,
-      severity: 'warning',
-      dueDate: vehicles[0]?.puc.expiryDate || '2026-10-14',
-      timestamp: new Date().toISOString(),
-    };
+  const handleSaveServiceRecord = (
+    vehicleId: string,
+    recordData: Omit<ServiceRecord, 'id'>,
+    recordId?: string
+  ) => {
+    if (recordId) {
+      db.updateServiceRecord(vehicleId, recordId, recordData);
+    } else {
+      db.addServiceRecord(vehicleId, recordData);
+    }
+    refreshVehicles();
+    const updated = db.getVehicleById(vehicleId);
+    if (updated && selectedVehicle?.id === vehicleId) {
+      setSelectedVehicle(updated);
+    }
+    triggerHaptic();
+  };
 
-    setActiveBannerAlert(urgentPUC as VehicleAlert);
-    notificationService.sendPushNotification(
-      urgentPUC.title,
-      urgentPUC.message,
-      'test-puc-' + Date.now()
-    );
+  const handleDeleteServiceRecord = (vehicle: Vehicle, recordId: string) => {
+    db.deleteServiceRecord(vehicle.id, recordId);
+    refreshVehicles();
+    const updated = db.getVehicleById(vehicle.id);
+    if (updated && selectedVehicle?.id === vehicle.id) {
+      setSelectedVehicle(updated);
+    }
+    triggerHaptic();
+  };
+
+  // Test trigger dispatches actual push notification, sound chime, vibration, and banner
+  const triggerManualTestAlert = (type: 'puc' | 'insurance' = 'puc') => {
+    if (type === 'insurance') {
+      const urgentIns = alerts.find(
+        (a) => a.type === 'insurance_expiring' || a.type === 'insurance_expired'
+      ) || {
+        id: 'test-ins-alert-' + Date.now(),
+        vehicleId: vehicles[1]?.id || vehicles[0]?.id || 'v2',
+        vehicleName: vehicles[1]?.nickname || 'Royal Enfield Classic 350',
+        registrationNumber: vehicles[1]?.registrationNumber || 'DL 01 AB 9944',
+        type: 'insurance_expiring',
+        title: '🛡️ Insurance Expiring in 4 Days!',
+        message: `${vehicles[1]?.nickname || 'Royal Enfield'} (${vehicles[1]?.registrationNumber || 'DL 01 AB 9944'}) insurance policy expires on ${vehicles[1]?.insurance.expiryDate || 'soon'}. Renew to keep coverage active.`,
+        daysRemaining: 4,
+        severity: 'warning',
+        dueDate: vehicles[1]?.insurance.expiryDate || '2026-10-15',
+        timestamp: new Date().toISOString(),
+      };
+
+      setActiveBannerAlert(urgentIns as VehicleAlert);
+      notificationService.sendPushNotification(
+        urgentIns.title,
+        urgentIns.message,
+        'test-ins-' + Date.now()
+      );
+    } else {
+      const urgentPUC = alerts.find(
+        (a) => a.type === 'puc_expiring' || a.type === 'puc_expired'
+      ) || {
+        id: 'test-puc-alert-' + Date.now(),
+        vehicleId: vehicles[0]?.id || 'v1',
+        vehicleName: vehicles[0]?.nickname || 'Tata Nexon EV',
+        registrationNumber: vehicles[0]?.registrationNumber || 'MH 12 QW 5678',
+        type: 'puc_expiring',
+        title: '⚠️ PUC Expiring in 3 Days!',
+        message: `${vehicles[0]?.nickname || 'Tata Nexon EV'} (${vehicles[0]?.registrationNumber || 'MH 12 QW 5678'}) PUC certificate is near expiry. Please renew to avoid fines.`,
+        daysRemaining: 3,
+        severity: 'warning',
+        dueDate: vehicles[0]?.puc.expiryDate || '2026-10-14',
+        timestamp: new Date().toISOString(),
+      };
+
+      setActiveBannerAlert(urgentPUC as VehicleAlert);
+      notificationService.sendPushNotification(
+        urgentPUC.title,
+        urgentPUC.message,
+        'test-puc-' + Date.now()
+      );
+    }
   };
 
   // Filtered vehicle list for Garage
@@ -154,8 +236,12 @@ export default function App() {
 
     if (filterType === 'all') return true;
     if (filterType === 'puc_alert') {
-      const days = alerts.find((a) => a.vehicleId === v.id && (a.type === 'puc_expiring' || a.type === 'puc_expired'));
-      return !!days;
+      const hasPucAlert = alerts.find((a) => a.vehicleId === v.id && (a.type === 'puc_expiring' || a.type === 'puc_expired'));
+      return !!hasPucAlert;
+    }
+    if (filterType === 'insurance_alert') {
+      const hasInsAlert = alerts.find((a) => a.vehicleId === v.id && (a.type === 'insurance_expiring' || a.type === 'insurance_expired'));
+      return !!hasInsAlert;
     }
     if (filterType === '2wheeler') return v.type === 'motorcycle' || v.type === 'scooter';
     if (filterType === '4wheeler') return v.type === 'car' || v.type === 'suv' || v.type === 'commercial';
@@ -193,6 +279,13 @@ export default function App() {
               setIsRenewOpen(true);
             }
           }}
+          onRenewInsurance={(vId) => {
+            const v = vehicles.find((item) => item.id === vId);
+            if (v) {
+              setInsuranceRenewVehicle(v);
+              setIsInsuranceRenewOpen(true);
+            }
+          }}
         />
 
         {/* Top App Header */}
@@ -210,7 +303,7 @@ export default function App() {
                   Android
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 font-medium">Local Vehicle Manager</p>
+              <p className="text-[10px] text-slate-400 font-medium">Local Vehicle & Expiration Manager</p>
             </div>
           </div>
 
@@ -233,26 +326,29 @@ export default function App() {
           {/* TAB 1: GARAGE */}
           {activeTab === 'garage' && (
             <div className="space-y-4">
-              {/* Urgent 5-day alert banner trigger pill if PUC alerts exist */}
-              {pucAlertsCount > 0 && (
+              {/* Urgent Expiry Alert banner trigger pill if PUC or Insurance alerts exist */}
+              {totalExpirationAlertsCount > 0 && (
                 <div
                   onClick={() => setActiveTab('alerts')}
-                  className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-rose-500/20 to-amber-500/20 border border-amber-500/50 flex items-center justify-between cursor-pointer hover:border-amber-400 transition animate-in fade-in"
+                  className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/20 via-teal-500/20 to-amber-500/20 border border-teal-500/40 flex items-center justify-between cursor-pointer hover:border-teal-400 transition animate-in fade-in"
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400">
-                      <AlertTriangle className="w-4 h-4" />
+                    <div className="w-8 h-8 rounded-xl bg-teal-500/20 flex items-center justify-center text-teal-300">
+                      <Shield className="w-4 h-4" />
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-amber-300">
-                        {pucAlertsCount} PUC Alert{pucAlertsCount > 1 ? 's' : ''} Active!
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>{totalExpirationAlertsCount} Expiration Alert{totalExpirationAlertsCount > 1 ? 's' : ''} Active!</span>
+                        <span className="text-[10px] text-teal-300 bg-teal-500/20 px-1.5 py-0.5 rounded font-mono">
+                          {pucAlertsCount} PUC • {insuranceAlertsCount} Ins
+                        </span>
                       </div>
                       <p className="text-[11px] text-slate-300">
-                        Expiring within 5 days. Tap to review radar.
+                        Expiring soon. Tap to review Expiration Radar.
                       </p>
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-amber-400 underline">View →</span>
+                  <span className="text-xs font-bold text-teal-400 underline">View →</span>
                 </div>
               )}
 
@@ -281,6 +377,17 @@ export default function App() {
                   }`}
                 >
                   All ({vehicles.length})
+                </button>
+                <button
+                  onClick={() => setFilterType('insurance_alert')}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition whitespace-nowrap flex items-center gap-1 ${
+                    filterType === 'insurance_alert'
+                      ? 'bg-teal-500 text-slate-950 shadow-sm'
+                      : 'bg-slate-900 text-teal-300 hover:text-teal-200 border border-teal-500/30'
+                  }`}
+                >
+                  <Shield className="w-3 h-3" />
+                  <span>Ins Alerts ({insuranceAlertsCount})</span>
                 </button>
                 <button
                   onClick={() => setFilterType('puc_alert')}
@@ -353,6 +460,15 @@ export default function App() {
                         setPucRenewVehicle(v);
                         setIsRenewOpen(true);
                       }}
+                      onRenewInsurance={(v) => {
+                        setInsuranceRenewVehicle(v);
+                        setIsInsuranceRenewOpen(true);
+                      }}
+                      onAddService={(v) => {
+                        setServiceVehicle(v);
+                        setEditingServiceRecord(null);
+                        setIsServiceModalOpen(true);
+                      }}
                     />
                   ))
                 )}
@@ -360,7 +476,7 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 2: ALERTS & PUC EXPIRATION RADAR */}
+          {/* TAB 2: ALERTS & EXPIRATION RADAR */}
           {activeTab === 'alerts' && (
             <PUCAlertsCenter
               vehicles={vehicles}
@@ -368,6 +484,10 @@ export default function App() {
               onRenewPUC={(v) => {
                 setPucRenewVehicle(v);
                 setIsRenewOpen(true);
+              }}
+              onRenewInsurance={(v) => {
+                setInsuranceRenewVehicle(v);
+                setIsInsuranceRenewOpen(true);
               }}
               onSelectVehicle={(v) => {
                 setSelectedVehicle(v);
@@ -425,7 +545,7 @@ export default function App() {
             <span className="text-[10px] tracking-tight">Garage</span>
           </button>
 
-          {/* Alerts & 5-day PUC Radar */}
+          {/* Alerts & Expiration Radar */}
           <button
             onClick={() => setActiveTab('alerts')}
             className={`flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition relative cursor-pointer ${
@@ -436,11 +556,11 @@ export default function App() {
               activeTab === 'alerts' ? 'bg-teal-500/20 text-teal-400' : ''
             }`}>
               <Bell className="w-5 h-5" />
-              {pucAlertsCount > 0 && (
-                <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-amber-400 border-2 border-slate-950 animate-ping"></span>
+              {totalExpirationAlertsCount > 0 && (
+                <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-teal-400 border-2 border-slate-950 animate-ping"></span>
               )}
-              {pucAlertsCount > 0 && (
-                <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-amber-400 border-2 border-slate-950"></span>
+              {totalExpirationAlertsCount > 0 && (
+                <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-teal-400 border-2 border-slate-950"></span>
               )}
             </div>
             <span className="text-[10px] tracking-tight">Alerts</span>
@@ -507,10 +627,25 @@ export default function App() {
           setPucRenewVehicle(v);
           setIsRenewOpen(true);
         }}
+        onRenewInsurance={(v) => {
+          setInsuranceRenewVehicle(v);
+          setIsInsuranceRenewOpen(true);
+        }}
         onLogPressure={(v) => {
           setPressureVehicle(v);
           setIsPressureOpen(true);
         }}
+        onAddService={(v) => {
+          setServiceVehicle(v);
+          setEditingServiceRecord(null);
+          setIsServiceModalOpen(true);
+        }}
+        onEditService={(v, record) => {
+          setServiceVehicle(v);
+          setEditingServiceRecord(record);
+          setIsServiceModalOpen(true);
+        }}
+        onDeleteService={handleDeleteServiceRecord}
       />
 
       {/* 3. Renew PUC Certificate Modal */}
@@ -524,7 +659,30 @@ export default function App() {
         onSavePUC={handleSavePUC}
       />
 
-      {/* 4. Quick Log Tyre Pressure Modal */}
+      {/* 4. Renew Insurance Policy Modal */}
+      <RenewInsuranceModal
+        vehicle={insuranceRenewVehicle}
+        isOpen={isInsuranceRenewOpen}
+        onClose={() => {
+          setIsInsuranceRenewOpen(false);
+          setInsuranceRenewVehicle(null);
+        }}
+        onSaveInsurance={handleSaveInsurance}
+      />
+
+      {/* 5. Add / Edit Service Record Modal */}
+      <AddEditServiceModal
+        vehicle={serviceVehicle}
+        initialRecord={editingServiceRecord}
+        isOpen={isServiceModalOpen}
+        onClose={() => {
+          setIsServiceModalOpen(false);
+          setEditingServiceRecord(null);
+        }}
+        onSave={handleSaveServiceRecord}
+      />
+
+      {/* 6. Quick Log Tyre Pressure Modal */}
       <QuickLogPressureModal
         vehicle={pressureVehicle}
         isOpen={isPressureOpen}
